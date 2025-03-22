@@ -16,20 +16,25 @@ from mcp.server.fastmcp import FastMCP, Context
 
 # Google API imports
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 # Constants
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 TOKEN_PATH = os.environ.get('TOKEN_PATH', 'token.json')
 CREDENTIALS_PATH = os.environ.get('CREDENTIALS_PATH', 'credentials.json')
+SERVICE_ACCOUNT_PATH = os.environ.get('SERVICE_ACCOUNT_PATH', 'service_account.json')
+DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID', '')  # Working directory in Google Drive
 
 
 @dataclass
 class SpreadsheetContext:
     """Context for Google Spreadsheet service"""
     sheets_service: Any
+    drive_service: Any
+    folder_id: Optional[str] = None
 
 
 @asynccontextmanager
@@ -37,31 +42,54 @@ async def spreadsheet_lifespan(server: FastMCP) -> AsyncIterator[SpreadsheetCont
     """Manage Google Spreadsheet API connection lifecycle"""
     # Authenticate and build the service
     creds = None
-    if os.path.exists(TOKEN_PATH):
-        with open(TOKEN_PATH, 'r') as token:
-            creds = Credentials.from_authorized_user_info(json.load(token), SCOPES)
-            
-    # If credentials are not valid or don't exist, get new ones
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-            creds = flow.run_local_server(port=0)
-        
-        # Save the credentials for the next run
-        with open(TOKEN_PATH, 'w') as token:
-            token.write(creds.to_json())
     
-    # Build the service
-    service = build('sheets', 'v4', credentials=creds)
-    sheets_service = service.spreadsheets()
+    # Check for service account authentication first
+    if SERVICE_ACCOUNT_PATH and os.path.exists(SERVICE_ACCOUNT_PATH):
+        try:
+            # Regular service account authentication
+            creds = service_account.Credentials.from_service_account_file(
+                SERVICE_ACCOUNT_PATH,
+                scopes=SCOPES
+            )
+            print("Using service account authentication")
+            print(f"Working with Google Drive folder ID: {DRIVE_FOLDER_ID or 'Not specified'}")
+        except Exception as e:
+            print(f"Error using service account authentication: {e}")
+            print("Falling back to OAuth flow")
+            creds = None
+    
+    # Fall back to OAuth flow if service account auth failed or not configured
+    if not creds:
+        print("Using OAuth authentication flow")
+        if os.path.exists(TOKEN_PATH):
+            with open(TOKEN_PATH, 'r') as token:
+                creds = Credentials.from_authorized_user_info(json.load(token), SCOPES)
+                
+        # If credentials are not valid or don't exist, get new ones
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+                creds = flow.run_local_server(port=0)
+            
+            # Save the credentials for the next run
+            with open(TOKEN_PATH, 'w') as token:
+                token.write(creds.to_json())
+    
+    # Build the services
+    sheets_service = build('sheets', 'v4', credentials=creds)
+    drive_service = build('drive', 'v3', credentials=creds)
     
     try:
         # Provide the service in the context
-        yield SpreadsheetContext(sheets_service=sheets_service)
+        yield SpreadsheetContext(
+            sheets_service=sheets_service,
+            drive_service=drive_service,
+            folder_id=DRIVE_FOLDER_ID if DRIVE_FOLDER_ID else None
+        )
     finally:
-        # No explicit cleanup needed for Google Sheets API
+        # No explicit cleanup needed for Google APIs
         pass
 
 
@@ -96,7 +124,7 @@ def get_sheet_data(spreadsheet_id: str,
         full_range = sheet
     
     # Call the Sheets API
-    result = sheets_service.values().get(
+    result = sheets_service.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
         range=full_range
     ).execute()
@@ -135,7 +163,7 @@ def update_cells(spreadsheet_id: str,
     }
     
     # Call the Sheets API to update values
-    result = sheets_service.values().update(
+    result = sheets_service.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
         range=full_range,
         valueInputOption='USER_ENTERED',
@@ -179,7 +207,7 @@ def batch_update_cells(spreadsheet_id: str,
     }
     
     # Call the Sheets API to perform batch update
-    result = sheets_service.values().batchUpdate(
+    result = sheets_service.spreadsheets().values().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body=batch_body
     ).execute()
@@ -208,7 +236,7 @@ def add_rows(spreadsheet_id: str,
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
     # Get sheet ID
-    spreadsheet = sheets_service.get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = sheets_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     sheet_id = None
     
     for s in spreadsheet['sheets']:
@@ -237,7 +265,7 @@ def add_rows(spreadsheet_id: str,
     }
     
     # Execute the request
-    result = sheets_service.batchUpdate(
+    result = sheets_service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body=request_body
     ).execute()
@@ -266,7 +294,7 @@ def add_columns(spreadsheet_id: str,
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
     # Get sheet ID
-    spreadsheet = sheets_service.get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = sheets_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     sheet_id = None
     
     for s in spreadsheet['sheets']:
@@ -295,7 +323,7 @@ def add_columns(spreadsheet_id: str,
     }
     
     # Execute the request
-    result = sheets_service.batchUpdate(
+    result = sheets_service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body=request_body
     ).execute()
@@ -317,7 +345,7 @@ def list_sheets(spreadsheet_id: str, ctx: Context = None) -> List[str]:
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
     # Get spreadsheet metadata
-    spreadsheet = sheets_service.get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = sheets_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     
     # Extract sheet names
     sheet_names = [sheet['properties']['title'] for sheet in spreadsheet['sheets']]
@@ -346,7 +374,7 @@ def copy_sheet(src_spreadsheet: str,
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
     # Get source sheet ID
-    src = sheets_service.get(spreadsheetId=src_spreadsheet).execute()
+    src = sheets_service.spreadsheets().get(spreadsheetId=src_spreadsheet).execute()
     src_sheet_id = None
     
     for s in src['sheets']:
@@ -358,7 +386,7 @@ def copy_sheet(src_spreadsheet: str,
         return {"error": f"Source sheet '{src_sheet}' not found"}
     
     # Copy the sheet to destination spreadsheet
-    copy_result = sheets_service.sheets().copyTo(
+    copy_result = sheets_service.spreadsheets().sheets().copyTo(
         spreadsheetId=src_spreadsheet,
         sheetId=src_sheet_id,
         body={
@@ -386,7 +414,7 @@ def copy_sheet(src_spreadsheet: str,
             ]
         }
         
-        rename_result = sheets_service.batchUpdate(
+        rename_result = sheets_service.spreadsheets().batchUpdate(
             spreadsheetId=dst_spreadsheet,
             body=rename_request
         ).execute()
@@ -418,7 +446,7 @@ def rename_sheet(spreadsheet: str,
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
     # Get sheet ID
-    spreadsheet_data = sheets_service.get(spreadsheetId=spreadsheet).execute()
+    spreadsheet_data = sheets_service.spreadsheets().get(spreadsheetId=spreadsheet).execute()
     sheet_id = None
     
     for s in spreadsheet_data['sheets']:
@@ -445,7 +473,7 @@ def rename_sheet(spreadsheet: str,
     }
     
     # Execute the request
-    result = sheets_service.batchUpdate(
+    result = sheets_service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet,
         body=request_body
     ).execute()
@@ -469,7 +497,7 @@ def get_spreadsheet_info(spreadsheet_id: str) -> str:
     sheets_service = context.sheets_service
     
     # Get spreadsheet metadata
-    spreadsheet = sheets_service.get(spreadsheetId=spreadsheet_id).execute()
+    spreadsheet = sheets_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     
     # Extract relevant information
     info = {
@@ -499,8 +527,10 @@ def create_spreadsheet(title: str, ctx: Context = None) -> Dict[str, Any]:
         Information about the newly created spreadsheet including its ID
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
+    drive_service = ctx.request_context.lifespan_context.drive_service
+    folder_id = ctx.request_context.lifespan_context.folder_id
     
-    # Define the spreadsheet body
+    # Create the spreadsheet using Sheets API
     spreadsheet_body = {
         'properties': {
             'title': title
@@ -508,12 +538,42 @@ def create_spreadsheet(title: str, ctx: Context = None) -> Dict[str, Any]:
     }
     
     # Create the spreadsheet
-    spreadsheet = sheets_service.create(body=spreadsheet_body).execute()
+    spreadsheet = sheets_service.spreadsheets().create(
+        body=spreadsheet_body, 
+        fields='spreadsheetId,properties,sheets'
+    ).execute()
+    
+    spreadsheet_id = spreadsheet.get('spreadsheetId')
+    print(f"Spreadsheet created with ID: {spreadsheet_id}")
+    
+    # If a folder_id is specified, move the spreadsheet to that folder
+    if folder_id:
+        try:
+            # Get the current parents
+            file = drive_service.files().get(
+                fileId=spreadsheet_id, 
+                fields='parents'
+            ).execute()
+            
+            previous_parents = ",".join(file.get('parents', []))
+            
+            # Move the file to the specified folder
+            drive_service.files().update(
+                fileId=spreadsheet_id,
+                addParents=folder_id,
+                removeParents=previous_parents,
+                fields='id, parents'
+            ).execute()
+            
+            print(f"Spreadsheet moved to folder with ID: {folder_id}")
+        except Exception as e:
+            print(f"Warning: Could not move spreadsheet to folder: {e}")
     
     return {
-        'spreadsheetId': spreadsheet['spreadsheetId'],
-        'title': spreadsheet['properties']['title'],
-        'sheets': [sheet['properties']['title'] for sheet in spreadsheet.get('sheets', [])]
+        'spreadsheetId': spreadsheet_id,
+        'title': spreadsheet.get('properties', {}).get('title', title),
+        'sheets': [sheet.get('properties', {}).get('title', 'Sheet1') for sheet in spreadsheet.get('sheets', [])],
+        'folder': folder_id if folder_id else 'root'
     }
 
 
@@ -561,6 +621,40 @@ def create_sheet(spreadsheet_id: str,
         'index': new_sheet_props.get('index'),
         'spreadsheetId': spreadsheet_id
     }
+
+
+@mcp.tool()
+def list_spreadsheets(ctx: Context = None) -> List[Dict[str, str]]:
+    """
+    List all spreadsheets in the configured Google Drive folder.
+    If no folder is configured, lists spreadsheets from 'My Drive'.
+    
+    Returns:
+        List of spreadsheets with their ID and title
+    """
+    drive_service = ctx.request_context.lifespan_context.drive_service
+    folder_id = ctx.request_context.lifespan_context.folder_id
+    
+    query = "mimeType='application/vnd.google-apps.spreadsheet'"
+    
+    # If a specific folder is configured, search only in that folder
+    if folder_id:
+        query += f" and '{folder_id}' in parents"
+        print(f"Searching for spreadsheets in folder: {folder_id}")
+    else:
+        print("Searching for spreadsheets in 'My Drive'")
+    
+    # List spreadsheets
+    results = drive_service.files().list(
+        q=query,
+        spaces='drive',
+        fields='files(id, name)',
+        orderBy='modifiedTime desc'
+    ).execute()
+    
+    spreadsheets = results.get('files', [])
+    
+    return [{'id': sheet['id'], 'title': sheet['name']} for sheet in spreadsheets]
 
 
 def main():
