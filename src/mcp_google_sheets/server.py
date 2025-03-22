@@ -607,7 +607,7 @@ def create_sheet(spreadsheet_id: str,
     }
     
     # Execute the request
-    result = sheets_service.batchUpdate(
+    result = sheets_service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body=request_body
     ).execute()
