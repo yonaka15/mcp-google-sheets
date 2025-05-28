@@ -23,9 +23,9 @@
 
 ## 🚀 Quick Start (Using `uvx`)
 
-Essentially the server runs in one line: `uvx mcp-google-sheets`. 
+Essentially the server runs in one line: `uvx mcp-google-sheets@latest`. 
 
-This cmd will automatically download the latest code if needed and run it. However, it takes quite a few steps to setup the Google Cloud, please read the steps below.
+This cmd will automatically download the latest code and run it. **We recommend always using `@latest`** to ensure you have the newest version with the latest features and bug fixes.
 
 1.  **☁️ Prerequisite: Google Cloud Setup**
     *   You **must** configure Google Cloud Platform credentials and enable the necessary APIs first. We strongly recommend using a **Service Account**.
@@ -66,9 +66,11 @@ This cmd will automatically download the latest code if needed and run it. Howev
 4.  **🏃 Run the Server!**
     *   `uvx` will automatically download and run the latest version of `mcp-google-sheets`:
         ```bash
-        uvx mcp-google-sheets
+        uvx mcp-google-sheets@latest
         ```
     *   The server will start and print logs indicating it's ready.
+    *   
+    *   > **💡 Pro Tip:** Always use `@latest` to ensure you get the newest version with bug fixes and features. Without `@latest`, `uvx` may use a cached older version.
 
 5.  **🔌 Connect your MCP Client**
     *   Configure your client (e.g., Claude Desktop) to connect to the running server.
@@ -271,7 +273,7 @@ The server checks for credentials in this order:
 As shown in the [Ultra Quick Start](#-ultra-quick-start-using-uvx), this is the easiest way. Set environment variables, then run:
 
 ```bash
-uvx mcp-google-sheets
+uvx mcp-google-sheets@latest
 ```
 `uvx` handles fetching and running the package temporarily.
 
@@ -302,7 +304,7 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
   "mcpServers": {
     "google-sheets": {
       "command": "uvx",
-      "args": ["mcp-google-sheets"],
+      "args": ["mcp-google-sheets@latest"],
       "env": {
         // Use ABSOLUTE paths here
         "SERVICE_ACCOUNT_PATH": "/full/path/to/your/service-account-key.json",
@@ -323,7 +325,7 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
   "mcpServers": {
     "google-sheets": {
       "command": "uvx",
-      "args": ["mcp-google-sheets"],
+      "args": ["mcp-google-sheets@latest"],
       "env": {
         // Use ABSOLUTE paths here
         "CREDENTIALS_PATH": "/full/path/to/your/credentials.json",
@@ -345,7 +347,7 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
   "mcpServers": {
     "google-sheets": {
       "command": "uvx",
-      "args": ["mcp-google-sheets"],
+      "args": ["mcp-google-sheets@latest"],
       "env": {
         // Paste the full Base64 string here
         "CREDENTIALS_CONFIG": "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAi...",
@@ -366,7 +368,7 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
   "mcpServers": {
     "google-sheets": {
       "command": "uvx",
-      "args": ["mcp-google-sheets"],
+      "args": ["mcp-google-sheets@latest"],
       "env": {
         // Option 1: Use Google's standard environment variable
         // "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json"
