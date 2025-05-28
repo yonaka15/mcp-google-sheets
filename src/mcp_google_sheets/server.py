@@ -21,6 +21,7 @@ from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+import google.auth
 
 # Constants
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
@@ -47,8 +48,8 @@ async def spreadsheet_lifespan(server: FastMCP) -> AsyncIterator[SpreadsheetCont
     if CREDENTIALS_CONFIG:
         creds = service_account.Credentials.from_service_account_info(json.loads(base64.b64decode(CREDENTIALS_CONFIG)), scopes=SCOPES)
     
-    # Check for service account authentication first
-    if SERVICE_ACCOUNT_PATH and os.path.exists(SERVICE_ACCOUNT_PATH):
+    # Check for explicit service account authentication first (custom SERVICE_ACCOUNT_PATH)
+    if not creds and SERVICE_ACCOUNT_PATH and os.path.exists(SERVICE_ACCOUNT_PATH):
         try:
             # Regular service account authentication
             creds = service_account.Credentials.from_service_account_file(
@@ -59,12 +60,11 @@ async def spreadsheet_lifespan(server: FastMCP) -> AsyncIterator[SpreadsheetCont
             print(f"Working with Google Drive folder ID: {DRIVE_FOLDER_ID or 'Not specified'}")
         except Exception as e:
             print(f"Error using service account authentication: {e}")
-            print("Falling back to OAuth flow")
             creds = None
     
     # Fall back to OAuth flow if service account auth failed or not configured
     if not creds:
-        print("Using OAuth authentication flow")
+        print("Trying OAuth authentication flow")
         if os.path.exists(TOKEN_PATH):
             with open(TOKEN_PATH, 'r') as token:
                 creds = Credentials.from_authorized_user_info(json.load(token), SCOPES)
@@ -74,12 +74,31 @@ async def spreadsheet_lifespan(server: FastMCP) -> AsyncIterator[SpreadsheetCont
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-                creds = flow.run_local_server(port=0)
-            
-            # Save the credentials for the next run
-            with open(TOKEN_PATH, 'w') as token:
-                token.write(creds.to_json())
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                    
+                    # Save the credentials for the next run
+                    with open(TOKEN_PATH, 'w') as token:
+                        token.write(creds.to_json())
+                    print("Successfully authenticated using OAuth flow")
+                except Exception as e:
+                    print(f"Error with OAuth flow: {e}")
+                    creds = None
+    
+    # Try Application Default Credentials if no creds thus far
+    # This will automatically check GOOGLE_APPLICATION_CREDENTIALS, gcloud auth, and metadata service
+    if not creds:
+        try:
+            print("Attempting to use Application Default Credentials (ADC)")
+            print("ADC will check: GOOGLE_APPLICATION_CREDENTIALS, gcloud auth, and metadata service")
+            creds, project = google.auth.default(
+                scopes=SCOPES
+            )
+            print(f"Successfully authenticated using ADC for project: {project}")
+        except Exception as e:
+            print(f"Error using Application Default Credentials: {e}")
+            raise Exception("All authentication methods failed. Please configure credentials.")
     
     # Build the services
     sheets_service = build('sheets', 'v4', credentials=creds)
@@ -107,7 +126,7 @@ mcp = FastMCP("Google Spreadsheet",
 def get_sheet_data(spreadsheet_id: str, 
                    sheet: str,
                    range: Optional[str] = None,
-                   ctx: Context = None) -> List[List[Any]]:
+                   ctx: Context = None) -> Dict[str, Any]:
     """
     Get data from a specific sheet in a Google Spreadsheet.
     
@@ -117,25 +136,25 @@ def get_sheet_data(spreadsheet_id: str,
         range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all data.
     
     Returns:
-        A 2D array of the sheet data
+        Grid data structure with full metadata from Google Sheets API
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
-    # Construct the range
+    # Construct the range - keep original API behavior
     if range:
         full_range = f"{sheet}!{range}"
     else:
         full_range = sheet
     
-    # Call the Sheets API
-    result = sheets_service.spreadsheets().values().get(
+    # Use includeGridData to preserve empty cells and structure
+    result = sheets_service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
-        range=full_range
+        ranges=[full_range],
+        includeGridData=True
     ).execute()
     
-    # Get the values from the response
-    values = result.get('values', [])
-    return values
+    # Return the grid data as-is, preserving all Google's metadata
+    return result
 
 @mcp.tool()
 def get_sheet_formulas(spreadsheet_id: str,

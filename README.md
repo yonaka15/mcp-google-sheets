@@ -104,7 +104,7 @@ This server exposes the following tools for interacting with Google Sheets:
     *   `spreadsheet_id` (string)
     *   `sheet` (string): Name of the sheet.
     *   `range` (optional string): A1 notation (e.g., `'A1:C10'`, `'Sheet1!B2:D'`). If omitted, reads the whole sheet.
-    *   _Returns:_ 2D array of cell values.
+    *   _Returns:_ Full grid data structure from Google Sheets API with all metadata preserved.
 *   **`get_sheet_formulas`**: Reads formulas from a range in a sheet.
     *   `spreadsheet_id` (string)
     *   `sheet` (string): Name of the sheet.
@@ -226,19 +226,37 @@ The server needs credentials to access Google APIs. Choose one method:
             export CREDENTIALS_CONFIG="ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb..."
             ```
 
+### Method D: Application Default Credentials (ADC) 🌐
+
+*   **Why?** Ideal for Google Cloud environments (GKE, Compute Engine, Cloud Run) and local development with `gcloud auth application-default login`. No explicit credential files needed.
+*   **How?** Uses Google's Application Default Credentials chain to automatically discover credentials from multiple sources.
+*   **ADC Search Order:**
+    1.  `GOOGLE_APPLICATION_CREDENTIALS` environment variable (path to service account key) - **Google's standard variable**
+    2.  `gcloud auth application-default login` credentials (local development)
+    3.  Attached service account from metadata server (GKE, Compute Engine, etc.)
+*   **Setup:**
+    *   **Local Development:** Run `gcloud auth application-default login` once
+    *   **Google Cloud:** Attach a service account to your compute resource
+    *   **Environment Variable:** Set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json` (Google's standard)
+*   **No additional environment variables needed** - ADC is used automatically as a fallback when other methods fail.
+
+**Note:** `GOOGLE_APPLICATION_CREDENTIALS` is Google's official standard environment variable, while `SERVICE_ACCOUNT_PATH` is specific to this MCP server. If you set `GOOGLE_APPLICATION_CREDENTIALS`, ADC will find it automatically.
+
 ### Authentication Priority & Summary
 
 The server checks for credentials in this order:
 
 1.  `CREDENTIALS_CONFIG` (Base64 content)
 2.  `SERVICE_ACCOUNT_PATH` (Path to Service Account JSON)
-3.  `CREDENTIALS_PATH` (Path to OAuth JSON) - triggers interactive flow if token is missing/expired.
+3.  `CREDENTIALS_PATH` (Path to OAuth JSON) - triggers interactive flow if token is missing/expired
+4.  **Application Default Credentials (ADC)** - automatic fallback
 
 **Environment Variable Summary:**
 
 | Variable               | Method(s)                   | Description                                                     | Default          |
 | :--------------------- | :-------------------------- | :-------------------------------------------------------------- | :--------------- |
-| `SERVICE_ACCOUNT_PATH` | Service Account             | Path to the Service Account JSON key file.                      | -                |
+| `SERVICE_ACCOUNT_PATH` | Service Account             | Path to the Service Account JSON key file (MCP server specific). | -                |
+| `GOOGLE_APPLICATION_CREDENTIALS` | ADC                   | Path to service account key (Google's standard variable).       | -                |
 | `DRIVE_FOLDER_ID`      | Service Account             | ID of the Google Drive folder shared with the Service Account.  | -                |
 | `CREDENTIALS_PATH`     | OAuth 2.0                   | Path to the OAuth 2.0 Client ID JSON file.                    | `credentials.json` |
 | `TOKEN_PATH`           | OAuth 2.0                   | Path to store the generated OAuth token.                        | `token.json`     |
@@ -341,27 +359,51 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
 </details>
 
 <details>
+<summary>🔵 Config: uvx + Application Default Credentials (ADC)</summary>
+
+```json
+{
+  "mcpServers": {
+    "google-sheets": {
+      "command": "uvx",
+      "args": ["mcp-google-sheets"],
+      "env": {
+        // Option 1: Use Google's standard environment variable
+        // "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json"
+        
+        // Option 2: No env vars needed if using `gcloud auth application-default login`
+      },
+      "healthcheck_url": "http://localhost:8000/health"
+    }
+  }
+}
+```
+*Prerequisites: Either set `GOOGLE_APPLICATION_CREDENTIALS` OR run `gcloud auth application-default login`*
+</details>
+
+<details>
 <summary>🟡 Config: Development (Running from cloned repo)</summary>
 
 ```json
 {
   "mcpServers": {
-    "mcp-google-sheets-dev": { // Use a distinct name
+    "mcp-google-sheets-local": {
       "command": "uv",
-      "args": ["run", "mcp-google-sheets"], // Assumes `mcp-google-sheets` script exists
-      "cwd": "/full/path/to/cloned/mcp-google-sheets", // ABSOLUTE path to repo
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/your/mcp-google-sheets",
+        "mcp-google-sheets"
+      ],
       "env": {
-        // Choose ONE auth method and set corresponding vars
-        // Example: Service Account Path
-        "SERVICE_ACCOUNT_PATH": "/full/path/to/cloned/mcp-google-sheets/service-account-key.json",
-        "DRIVE_FOLDER_ID": "your_shared_folder_id_here"
-      },
-      "healthcheck_url": "http://localhost:8000/health",
-      "disabled": false
+        "SERVICE_ACCOUNT_PATH": "/path/to/your/mcp-google-sheets/service_account.json",
+        "DRIVE_FOLDER_ID": "your_drive_folder_id_here"
+      }
     }
   }
 }
 ```
+*Note: Use `--directory` flag to specify the project path, and adjust paths to match your actual workspace location.*
 </details>
 
 ---
