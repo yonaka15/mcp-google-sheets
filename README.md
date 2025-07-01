@@ -296,6 +296,9 @@ If you want to modify the code:
 
 Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose the block matching your setup:
 
+**⚠️ Important Notes:**
+- **🍎 macOS Users:** use the full path: `"/Users/yourusername/.local/bin/uvx"` instead of just `"uvx"`
+
 <details>
 <summary>🔵 Config: uvx + Service Account (Recommended)</summary>
 
@@ -306,15 +309,30 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
       "command": "uvx",
       "args": ["mcp-google-sheets@latest"],
       "env": {
-        // Use ABSOLUTE paths here
         "SERVICE_ACCOUNT_PATH": "/full/path/to/your/service-account-key.json",
         "DRIVE_FOLDER_ID": "your_shared_folder_id_here"
-      },
-      "healthcheck_url": "http://localhost:8000/health" // Adjust host/port if needed
+      }
     }
   }
 }
 ```
+
+**🍎 macOS Note:** If you get a `spawn uvx ENOENT` error, use the full path to `uvx`:
+```json
+{
+  "mcpServers": {
+    "google-sheets": {
+      "command": "/Users/yourusername/.local/bin/uvx",
+      "args": ["mcp-google-sheets@latest"],
+      "env": {
+        "SERVICE_ACCOUNT_PATH": "/full/path/to/your/service-account-key.json",
+        "DRIVE_FOLDER_ID": "your_shared_folder_id_here"
+      }
+    }
+  }
+}
+```
+*Replace `yourusername` with your actual username.*
 </details>
 
 <details>
@@ -327,16 +345,16 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
       "command": "uvx",
       "args": ["mcp-google-sheets@latest"],
       "env": {
-        // Use ABSOLUTE paths here
         "CREDENTIALS_PATH": "/full/path/to/your/credentials.json",
-        "TOKEN_PATH": "/full/path/to/your/token.json" // Ensure this path is writable
-      },
-      "healthcheck_url": "http://localhost:8000/health"
+        "TOKEN_PATH": "/full/path/to/your/token.json"
+      }
     }
   }
 }
 ```
-*(A browser may open for Google login on first use)*
+*Note: A browser may open for Google login on first use. Ensure TOKEN_PATH is writable.*
+
+**🍎 macOS Note:** If you get a `spawn uvx ENOENT` error, replace `"command": "uvx"` with `"command": "/Users/yourusername/.local/bin/uvx"` (replace `yourusername` with your actual username).
 </details>
 
 <details>
@@ -349,20 +367,22 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
       "command": "uvx",
       "args": ["mcp-google-sheets@latest"],
       "env": {
-        // Paste the full Base64 string here
         "CREDENTIALS_CONFIG": "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAi...",
-        "DRIVE_FOLDER_ID": "your_shared_folder_id_here" // Still needed for Service Account folder context
-      },
-      "healthcheck_url": "http://localhost:8000/health"
+        "DRIVE_FOLDER_ID": "your_shared_folder_id_here"
+      }
     }
   }
 }
 ```
+*Note: Paste the full Base64 string for CREDENTIALS_CONFIG. DRIVE_FOLDER_ID is still needed for Service Account folder context.*
+
+**🍎 macOS Note:** If you get a `spawn uvx ENOENT` error, replace `"command": "uvx"` with `"command": "/Users/yourusername/.local/bin/uvx"` (replace `yourusername` with your actual username).
 </details>
 
 <details>
 <summary>🔵 Config: uvx + Application Default Credentials (ADC)</summary>
 
+**Option 1: With GOOGLE_APPLICATION_CREDENTIALS**
 ```json
 {
   "mcpServers": {
@@ -370,17 +390,28 @@ Add the server config to `claude_desktop_config.json` under `mcpServers`. Choose
       "command": "uvx",
       "args": ["mcp-google-sheets@latest"],
       "env": {
-        // Option 1: Use Google's standard environment variable
-        // "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json"
-        
-        // Option 2: No env vars needed if using `gcloud auth application-default login`
-      },
-      "healthcheck_url": "http://localhost:8000/health"
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json"
+      }
     }
   }
 }
 ```
-*Prerequisites: Either set `GOOGLE_APPLICATION_CREDENTIALS` OR run `gcloud auth application-default login`*
+
+**Option 2: With gcloud auth (no env vars needed)**
+```json
+{
+  "mcpServers": {
+    "google-sheets": {
+      "command": "uvx",
+      "args": ["mcp-google-sheets@latest"],
+      "env": {}
+    }
+  }
+}
+```
+*Prerequisites: Run `gcloud auth application-default login` first.*
+
+**🍎 macOS Note:** If you get a `spawn uvx ENOENT` error, replace `"command": "uvx"` with `"command": "/Users/yourusername/.local/bin/uvx"` (replace `yourusername` with your actual username).
 </details>
 
 <details>
