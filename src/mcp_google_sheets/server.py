@@ -6,7 +6,8 @@ A Model Context Protocol (MCP) server built with FastMCP for interacting with Go
 
 import base64
 import os
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Literal, Annotated
+from pydantic import Field
 import json
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ QueryDict = Dict[str, str]  # Query dictionary containing spreadsheet_id, sheet,
 RecipientDict = Dict[str, str]  # Recipient dictionary containing email_address, role
 
 # MCP imports
-from mcp.server.fastmcp import FastMCP, Context
+from fastmcp import FastMCP, Context
 
 # Google API imports
 from google.oauth2.credentials import Credentials
@@ -184,7 +185,7 @@ mcp = FastMCP("Google Spreadsheet",
               lifespan=spreadsheet_lifespan)
 
 
-@mcp.tool()
+@mcp.tool
 def get_sheet_data(spreadsheet_id: str, 
                    sheet: str,
                    range: Optional[str] = None,
@@ -219,7 +220,7 @@ def get_sheet_data(spreadsheet_id: str,
     return result
 
 
-@mcp.tool()
+@mcp.tool
 def insert_empty_rows(spreadsheet_id: str,
                       sheet: str,
                       count: int,
@@ -276,11 +277,13 @@ def insert_empty_rows(spreadsheet_id: str,
     
     return result
 
-@mcp.tool()
-def get_sheet_formulas(spreadsheet_id: str,
-                       sheet: str,
-                       range: Optional[str] = None,
-                       ctx: Context = None) -> SpreadsheetData:
+@mcp.tool
+def get_sheet_formulas(
+    spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
+    sheet: Annotated[str, Field(description="The name of the sheet")],
+    range: Annotated[Optional[str], Field(description="Optional cell range in A1 notation")] = None,
+    ctx: Context = None
+) -> List[List[str]]:
     """
     Get formulas from a specific sheet in a Google Spreadsheet.
     
@@ -290,7 +293,7 @@ def get_sheet_formulas(spreadsheet_id: str,
         range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all formulas from the sheet.
     
     Returns:
-        A 2D array of the sheet formulas.
+        A 2D array of the sheet formulas where each cell contains the formula as a string.
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
@@ -311,12 +314,14 @@ def get_sheet_formulas(spreadsheet_id: str,
     formulas = result.get('values', [])
     return formulas
 
-@mcp.tool()
-def update_cells(spreadsheet_id: str,
-                sheet: str,
-                range: str,
-                data: SpreadsheetData,
-                ctx: Context = None) -> Dict[str, Any]:
+@mcp.tool
+def update_cells(
+    spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
+    sheet: Annotated[str, Field(description="The name of the sheet")],
+    range: Annotated[str, Field(description="Cell range in A1 notation (e.g., 'A1:C10')")],
+    data: Annotated[List[List[Union[str, int, float, bool, None]]], Field(description="2D array of values to update. Each row is a list of cell values (string, number, boolean, or null).")],
+    ctx: Context = None
+) -> Dict[str, Any]:
     """
     Update cells in a Google Spreadsheet.
     
@@ -350,11 +355,13 @@ def update_cells(spreadsheet_id: str,
     return result
 
 
-@mcp.tool()
-def batch_update_cells(spreadsheet_id: str,
-                       sheet: str,
-                       ranges: BatchRanges,
-                       ctx: Context = None) -> Dict[str, Any]:
+@mcp.tool
+def batch_update_cells(
+    spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
+    sheet: Annotated[str, Field(description="The name of the sheet")],
+    ranges: Annotated[Dict[str, List[List[Union[str, int, float, bool, None]]]], Field(description="Dictionary mapping range strings to 2D arrays of values. Example: {'A1:B2': [['John', 25], ['Jane', 30]]}")],
+    ctx: Context = None
+) -> Dict[str, Any]:
     """
     Batch update multiple ranges in a Google Spreadsheet.
     
@@ -393,11 +400,13 @@ def batch_update_cells(spreadsheet_id: str,
     return result
 
 
-@mcp.tool()
-def add_rows(spreadsheet_id: str,
-             sheet: str,
-             data: SpreadsheetData,
-             ctx: Context = None) -> Dict[str, Any]:
+@mcp.tool
+def add_rows(
+    spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
+    sheet: Annotated[str, Field(description="The name of the sheet")],
+    data: Annotated[List[List[Union[str, int, float, bool, None]]], Field(description="2D array of rows to append. Each row is a list of cell values (string, number, boolean, or null).")],
+    ctx: Context = None
+) -> Dict[str, Any]:
     """
     Append rows to the end of a sheet (after the last row with data).
     
@@ -430,7 +439,7 @@ def add_rows(spreadsheet_id: str,
     return result
 
 
-@mcp.tool()
+@mcp.tool
 def add_columns(spreadsheet_id: str,
                 sheet: str,
                 count: int,
@@ -488,7 +497,7 @@ def add_columns(spreadsheet_id: str,
     return result
 
 
-@mcp.tool()
+@mcp.tool
 def list_sheets(spreadsheet_id: str, ctx: Context = None) -> List[str]:
     """
     List all sheets in a Google Spreadsheet.
@@ -510,7 +519,7 @@ def list_sheets(spreadsheet_id: str, ctx: Context = None) -> List[str]:
     return sheet_names
 
 
-@mcp.tool()
+@mcp.tool
 def copy_sheet(src_spreadsheet: str,
                src_sheet: str,
                dst_spreadsheet: str,
@@ -584,7 +593,7 @@ def copy_sheet(src_spreadsheet: str,
     return {"copy": copy_result}
 
 
-@mcp.tool()
+@mcp.tool
 def rename_sheet(spreadsheet: str,
                  sheet: str,
                  new_name: str,
@@ -638,9 +647,11 @@ def rename_sheet(spreadsheet: str,
     return result
 
 
-@mcp.tool()
-def get_multiple_sheet_data(queries: List[QueryDict], 
-                            ctx: Context = None) -> List[Dict[str, Any]]:
+@mcp.tool
+def get_multiple_sheet_data(
+    queries: Annotated[List[Dict[str, str]], Field(description="A list of query dictionaries, each with 'spreadsheet_id', 'sheet', and 'range' keys")],
+    ctx: Context = None
+) -> List[Dict[str, Any]]:
     """
     Get data from multiple specific ranges in Google Spreadsheets.
     
@@ -686,10 +697,12 @@ def get_multiple_sheet_data(queries: List[QueryDict],
     return results
 
 
-@mcp.tool()
-def get_multiple_spreadsheet_summary(spreadsheet_ids: List[str],
-                                   rows_to_fetch: int = 5, 
-                                   ctx: Context = None) -> List[Dict[str, Any]]:
+@mcp.tool
+def get_multiple_spreadsheet_summary(
+    spreadsheet_ids: Annotated[List[str], Field(description="A list of spreadsheet IDs to summarize")],
+    rows_to_fetch: Annotated[int, Field(description="Number of rows to fetch for summary", ge=1)] = 5,
+    ctx: Context = None
+) -> List[Dict[str, Any]]:
     """
     Get a summary of multiple Google Spreadsheets, including sheet names, 
     headers, and the first few rows of data for each sheet.
@@ -809,7 +822,7 @@ def get_spreadsheet_info(spreadsheet_id: str) -> str:
     return json.dumps(info, indent=2)
 
 
-@mcp.tool()
+@mcp.tool
 def create_spreadsheet(title: str, ctx: Context = None) -> Dict[str, Any]:
     """
     Create a new Google Spreadsheet.
@@ -871,7 +884,7 @@ def create_spreadsheet(title: str, ctx: Context = None) -> Dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp.tool
 def create_sheet(spreadsheet_id: str, 
                 title: str, 
                 ctx: Context = None) -> Dict[str, Any]:
@@ -917,7 +930,7 @@ def create_sheet(spreadsheet_id: str,
     }
 
 
-@mcp.tool()
+@mcp.tool
 def list_spreadsheets(ctx: Context = None) -> List[Dict[str, str]]:
     """
     List all spreadsheets in the configured Google Drive folder.
@@ -951,11 +964,13 @@ def list_spreadsheets(ctx: Context = None) -> List[Dict[str, str]]:
     return [{'id': sheet['id'], 'title': sheet['name']} for sheet in spreadsheets]
 
 
-@mcp.tool()
-def share_spreadsheet(spreadsheet_id: str, 
-                      recipients: List[RecipientDict],
-                      send_notification: bool = True,
-                      ctx: Context = None) -> Dict[str, List[Dict[str, Any]]]:
+@mcp.tool
+def share_spreadsheet(
+    spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet to share")], 
+    recipients: Annotated[List[Dict[str, str]], Field(description="List of recipients with 'email_address' and 'role' keys")],
+    send_notification: Annotated[bool, Field(description="Whether to send notification emails")] = True,
+    ctx: Context = None
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Share a Google Spreadsheet with multiple users via email, assigning specific roles.
     
