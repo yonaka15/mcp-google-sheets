@@ -42,67 +42,120 @@ class SpreadsheetContext:
 @asynccontextmanager
 async def spreadsheet_lifespan(server: FastMCP) -> AsyncIterator[SpreadsheetContext]:
     """Manage Google Spreadsheet API connection lifecycle"""
-    # Authenticate and build the service
     creds = None
-
-    if CREDENTIALS_CONFIG:
-        creds = service_account.Credentials.from_service_account_info(json.loads(base64.b64decode(CREDENTIALS_CONFIG)), scopes=SCOPES)
+    auth_method = "Unknown"
     
-    # Check for explicit service account authentication first (custom SERVICE_ACCOUNT_PATH)
+    # Method 1: CREDENTIALS_CONFIG (Base64 service account)
+    if CREDENTIALS_CONFIG:
+        try:
+            print("Attempting authentication with CREDENTIALS_CONFIG (Base64 service account)...")
+            service_account_info = json.loads(base64.b64decode(CREDENTIALS_CONFIG))
+            creds = service_account.Credentials.from_service_account_info(
+                service_account_info, 
+                scopes=SCOPES
+            )
+            auth_method = "Base64 Service Account"
+            print(f"✅ Successfully authenticated using {auth_method}")
+            print(f"📁 Working with Google Drive folder ID: {DRIVE_FOLDER_ID or 'Not specified'}")
+        except Exception as e:
+            print(f"❌ Error with CREDENTIALS_CONFIG: {e}")
+            creds = None
+    
+    # Method 2: SERVICE_ACCOUNT_PATH (Service account file)
     if not creds and SERVICE_ACCOUNT_PATH and os.path.exists(SERVICE_ACCOUNT_PATH):
         try:
-            # Regular service account authentication
+            print(f"Attempting authentication with SERVICE_ACCOUNT_PATH: {SERVICE_ACCOUNT_PATH}...")
             creds = service_account.Credentials.from_service_account_file(
                 SERVICE_ACCOUNT_PATH,
                 scopes=SCOPES
             )
-            print("Using service account authentication")
-            print(f"Working with Google Drive folder ID: {DRIVE_FOLDER_ID or 'Not specified'}")
+            auth_method = "Service Account File"
+            print(f"✅ Successfully authenticated using {auth_method}")
+            print(f"📁 Working with Google Drive folder ID: {DRIVE_FOLDER_ID or 'Not specified'}")
         except Exception as e:
-            print(f"Error using service account authentication: {e}")
+            print(f"❌ Error with service account file: {e}")
             creds = None
     
-    # Fall back to OAuth flow if service account auth failed or not configured
-    if not creds:
-        print("Trying OAuth authentication flow")
-        if os.path.exists(TOKEN_PATH):
-            with open(TOKEN_PATH, 'r') as token:
-                creds = Credentials.from_authorized_user_info(json.load(token), SCOPES)
-                
-        # If credentials are not valid or don't exist, get new ones
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                try:
-                    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-                    creds = flow.run_local_server(port=0)
-                    
-                    # Save the credentials for the next run
-                    with open(TOKEN_PATH, 'w') as token:
-                        token.write(creds.to_json())
-                    print("Successfully authenticated using OAuth flow")
-                except Exception as e:
-                    print(f"Error with OAuth flow: {e}")
-                    creds = None
-    
-    # Try Application Default Credentials if no creds thus far
-    # This will automatically check GOOGLE_APPLICATION_CREDENTIALS, gcloud auth, and metadata service
+    # Method 3: Application Default Credentials (ADC)
     if not creds:
         try:
-            print("Attempting to use Application Default Credentials (ADC)")
-            print("ADC will check: GOOGLE_APPLICATION_CREDENTIALS, gcloud auth, and metadata service")
-            creds, project = google.auth.default(
-                scopes=SCOPES
-            )
-            print(f"Successfully authenticated using ADC for project: {project}")
+            print("Attempting Application Default Credentials (ADC)...")
+            print("🔍 ADC will check: GOOGLE_APPLICATION_CREDENTIALS, gcloud auth, metadata service")
+            creds, project = google.auth.default(scopes=SCOPES)
+            auth_method = "Application Default Credentials"
+            print(f"✅ Successfully authenticated using {auth_method} for project: {project}")
         except Exception as e:
-            print(f"Error using Application Default Credentials: {e}")
-            raise Exception("All authentication methods failed. Please configure credentials.")
+            print(f"❌ Error with ADC: {e}")
+            creds = None
+    
+    # Method 4: OAuth 2.0 Flow (last resort - requires user interaction)
+    if not creds:
+        print("⚠️  All automated authentication methods failed.")
+        print("🔄 Attempting OAuth 2.0 flow (requires user interaction)...")
+        
+        # Check for existing token
+        if os.path.exists(TOKEN_PATH):
+            try:
+                with open(TOKEN_PATH, 'r') as token:
+                    creds = Credentials.from_authorized_user_info(json.load(token), SCOPES)
+                    if creds and creds.valid:
+                        auth_method = "Cached OAuth Token"
+                        print(f"✅ Using cached OAuth token")
+                    elif creds and creds.expired and creds.refresh_token:
+                        print("🔄 Refreshing expired OAuth token...")
+                        creds.refresh(Request())
+                        auth_method = "Refreshed OAuth Token"
+                        print(f"✅ Successfully refreshed OAuth token")
+                    else:
+                        creds = None
+            except Exception as e:
+                print(f"❌ Error loading cached token: {e}")
+                creds = None
+        
+        # If still no valid credentials, try interactive OAuth flow
+        if not creds:
+            if not os.path.exists(CREDENTIALS_PATH):
+                raise Exception(
+                    f"❌ All authentication methods failed!\n"
+                    f"📋 Tried: CREDENTIALS_CONFIG, SERVICE_ACCOUNT_PATH, ADC, OAuth\n"
+                    f"🔧 Solutions:\n"
+                    f"   1. Ensure CREDENTIALS_CONFIG is valid Base64-encoded service account\n"
+                    f"   2. Create service account file at: {SERVICE_ACCOUNT_PATH}\n"
+                    f"   3. Run 'gcloud auth application-default login'\n"
+                    f"   4. Create OAuth credentials at: {CREDENTIALS_PATH}\n"
+                    f"📚 See: https://github.com/xing5/mcp-google-sheets#authentication"
+                )
+            
+            try:
+                print(f"🔄 Starting interactive OAuth flow (credentials from: {CREDENTIALS_PATH})...")
+                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+                creds = flow.run_local_server(port=0)
+                
+                # Save the credentials for next time
+                with open(TOKEN_PATH, 'w') as token:
+                    token.write(creds.to_json())
+                    
+                auth_method = "Interactive OAuth"
+                print(f"✅ Successfully completed OAuth flow")
+            except Exception as e:
+                raise Exception(
+                    f"❌ OAuth flow failed: {e}\n"
+                    f"🌐 This error often indicates network connectivity issues\n"
+                    f"🔧 Solutions:\n"
+                    f"   1. Check internet connection\n"
+                    f"   2. Verify firewall settings\n"
+                    f"   3. Try using service account authentication instead\n"
+                    f"   4. Check if oauth2.googleapis.com is accessible"
+                )
+    
+    if not creds:
+        raise Exception("All authentication methods exhausted. Please check your configuration.")
     
     # Build the services
+    print(f"🔄 Building Google API services...")
     sheets_service = build('sheets', 'v4', credentials=creds)
     drive_service = build('drive', 'v3', credentials=creds)
+    print(f"🚀 Google Sheets MCP server ready! (Auth: {auth_method})")
     
     try:
         # Provide the service in the context
@@ -113,6 +166,7 @@ async def spreadsheet_lifespan(server: FastMCP) -> AsyncIterator[SpreadsheetCont
         )
     finally:
         # No explicit cleanup needed for Google APIs
+        print("💭 Google API services cleaned up")
         pass
 
 
