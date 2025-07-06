@@ -351,7 +351,7 @@ wheels = [
 
 [[package]]
 name = "mcp-google-sheets"
-version = "0.4.0.post2.dev0+8227ec6"
+version = "0.0.0.post15.dev0+dcf6f7a"
 source = { editable = "." }
 dependencies = [
     { name = "google-api-python-client" },

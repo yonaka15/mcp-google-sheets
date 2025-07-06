@@ -12,6 +12,14 @@ from dataclasses import dataclass
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
+# Schema improvements: Add more specific type definitions
+# Clarify 2D array type definitions
+CellValue = Union[str, int, float, bool, None]
+SpreadsheetData = List[List[CellValue]]
+BatchRanges = Dict[str, SpreadsheetData]
+QueryDict = Dict[str, str]  # Query dictionary containing spreadsheet_id, sheet, range
+RecipientDict = Dict[str, str]  # Recipient dictionary containing email_address, role
+
 # MCP imports
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -210,136 +218,21 @@ def get_sheet_data(spreadsheet_id: str,
     # Return the grid data as-is, preserving all Google's metadata
     return result
 
+
 @mcp.tool()
-def get_sheet_formulas(spreadsheet_id: str,
-                       sheet: str,
-                       range: Optional[str] = None,
-                       ctx: Context = None) -> List[List[Any]]:
+def insert_empty_rows(spreadsheet_id: str,
+                      sheet: str,
+                      count: int,
+                      start_row: Optional[int] = None,
+                      ctx: Context = None) -> Dict[str, Any]:
     """
-    Get formulas from a specific sheet in a Google Spreadsheet.
+    Insert empty rows into a sheet in a Google Spreadsheet.
     
     Args:
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
         sheet: The name of the sheet
-        range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all formulas from the sheet.
-    
-    Returns:
-        A 2D array of the sheet formulas.
-    """
-    sheets_service = ctx.request_context.lifespan_context.sheets_service
-    
-    # Construct the range
-    if range:
-        full_range = f"{sheet}!{range}"
-    else:
-        full_range = sheet  # Get all formulas in the specified sheet
-    
-    # Call the Sheets API
-    result = sheets_service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=full_range,
-        valueRenderOption='FORMULA'  # Request formulas
-    ).execute()
-    
-    # Get the formulas from the response
-    formulas = result.get('values', [])
-    return formulas
-
-@mcp.tool()
-def update_cells(spreadsheet_id: str,
-                sheet: str,
-                range: str,
-                data: List[List[Any]],
-                ctx: Context = None) -> Dict[str, Any]:
-    """
-    Update cells in a Google Spreadsheet.
-    
-    Args:
-        spreadsheet_id: The ID of the spreadsheet (found in the URL)
-        sheet: The name of the sheet
-        range: Cell range in A1 notation (e.g., 'A1:C10')
-        data: 2D array of values to update
-    
-    Returns:
-        Result of the update operation
-    """
-    sheets_service = ctx.request_context.lifespan_context.sheets_service
-    
-    # Construct the range
-    full_range = f"{sheet}!{range}"
-    
-    # Prepare the value range object
-    value_range_body = {
-        'values': data
-    }
-    
-    # Call the Sheets API to update values
-    result = sheets_service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=full_range,
-        valueInputOption='USER_ENTERED',
-        body=value_range_body
-    ).execute()
-    
-    return result
-
-
-@mcp.tool()
-def batch_update_cells(spreadsheet_id: str,
-                       sheet: str,
-                       ranges: Dict[str, List[List[Any]]],
-                       ctx: Context = None) -> Dict[str, Any]:
-    """
-    Batch update multiple ranges in a Google Spreadsheet.
-    
-    Args:
-        spreadsheet_id: The ID of the spreadsheet (found in the URL)
-        sheet: The name of the sheet
-        ranges: Dictionary mapping range strings to 2D arrays of values
-               e.g., {'A1:B2': [[1, 2], [3, 4]], 'D1:E2': [['a', 'b'], ['c', 'd']]}
-    
-    Returns:
-        Result of the batch update operation
-    """
-    sheets_service = ctx.request_context.lifespan_context.sheets_service
-    
-    # Prepare the batch update request
-    data = []
-    for range_str, values in ranges.items():
-        full_range = f"{sheet}!{range_str}"
-        data.append({
-            'range': full_range,
-            'values': values
-        })
-    
-    batch_body = {
-        'valueInputOption': 'USER_ENTERED',
-        'data': data
-    }
-    
-    # Call the Sheets API to perform batch update
-    result = sheets_service.spreadsheets().values().batchUpdate(
-        spreadsheetId=spreadsheet_id,
-        body=batch_body
-    ).execute()
-    
-    return result
-
-
-@mcp.tool()
-def add_rows(spreadsheet_id: str,
-             sheet: str,
-             count: int,
-             start_row: Optional[int] = None,
-             ctx: Context = None) -> Dict[str, Any]:
-    """
-    Add rows to a sheet in a Google Spreadsheet.
-    
-    Args:
-        spreadsheet_id: The ID of the spreadsheet (found in the URL)
-        sheet: The name of the sheet
-        count: Number of rows to add
-        start_row: 0-based row index to start adding. If not provided, adds at the end.
+        count: Number of empty rows to insert
+        start_row: 0-based row index to start inserting. If not provided, inserts at the end.
     
     Returns:
         Result of the operation
@@ -379,6 +272,159 @@ def add_rows(spreadsheet_id: str,
     result = sheets_service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body=request_body
+    ).execute()
+    
+    return result
+
+@mcp.tool()
+def get_sheet_formulas(spreadsheet_id: str,
+                       sheet: str,
+                       range: Optional[str] = None,
+                       ctx: Context = None) -> SpreadsheetData:
+    """
+    Get formulas from a specific sheet in a Google Spreadsheet.
+    
+    Args:
+        spreadsheet_id: The ID of the spreadsheet (found in the URL)
+        sheet: The name of the sheet
+        range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all formulas from the sheet.
+    
+    Returns:
+        A 2D array of the sheet formulas.
+    """
+    sheets_service = ctx.request_context.lifespan_context.sheets_service
+    
+    # Construct the range
+    if range:
+        full_range = f"{sheet}!{range}"
+    else:
+        full_range = sheet  # Get all formulas in the specified sheet
+    
+    # Call the Sheets API
+    result = sheets_service.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range=full_range,
+        valueRenderOption='FORMULA'  # Request formulas
+    ).execute()
+    
+    # Get the formulas from the response
+    formulas = result.get('values', [])
+    return formulas
+
+@mcp.tool()
+def update_cells(spreadsheet_id: str,
+                sheet: str,
+                range: str,
+                data: SpreadsheetData,
+                ctx: Context = None) -> Dict[str, Any]:
+    """
+    Update cells in a Google Spreadsheet.
+    
+    Args:
+        spreadsheet_id: The ID of the spreadsheet (found in the URL)
+        sheet: The name of the sheet
+        range: Cell range in A1 notation (e.g., 'A1:C10')
+        data: 2D array of values to update. Each row is a list of cell values (string, number, boolean, or null).
+    
+    Returns:
+        Result of the update operation
+    """
+    sheets_service = ctx.request_context.lifespan_context.sheets_service
+    
+    # Construct the range
+    full_range = f"{sheet}!{range}"
+    
+    # Prepare the value range object
+    value_range_body = {
+        'values': data
+    }
+    
+    # Call the Sheets API to update values
+    result = sheets_service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=full_range,
+        valueInputOption='USER_ENTERED',
+        body=value_range_body
+    ).execute()
+    
+    return result
+
+
+@mcp.tool()
+def batch_update_cells(spreadsheet_id: str,
+                       sheet: str,
+                       ranges: BatchRanges,
+                       ctx: Context = None) -> Dict[str, Any]:
+    """
+    Batch update multiple ranges in a Google Spreadsheet.
+    
+    Args:
+        spreadsheet_id: The ID of the spreadsheet (found in the URL)
+        sheet: The name of the sheet
+        ranges: Dictionary mapping range strings to 2D arrays of values.
+               Each value array contains rows of cell values (string, number, boolean, or null).
+               Example: {"A1:B2": [["John", 25], ["Jane", 30]], "D1:E2": [["Product", "Price"], ["Widget", 9.99]]}
+    
+    Returns:
+        Result of the batch update operation
+    """
+    sheets_service = ctx.request_context.lifespan_context.sheets_service
+    
+    # Prepare the batch update request
+    data = []
+    for range_str, values in ranges.items():
+        full_range = f"{sheet}!{range_str}"
+        data.append({
+            'range': full_range,
+            'values': values
+        })
+    
+    batch_body = {
+        'valueInputOption': 'USER_ENTERED',
+        'data': data
+    }
+    
+    # Call the Sheets API to perform batch update
+    result = sheets_service.spreadsheets().values().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body=batch_body
+    ).execute()
+    
+    return result
+
+
+@mcp.tool()
+def add_rows(spreadsheet_id: str,
+             sheet: str,
+             data: SpreadsheetData,
+             ctx: Context = None) -> Dict[str, Any]:
+    """
+    Append rows to the end of a sheet (after the last row with data).
+    
+    Args:
+        spreadsheet_id: The ID of the spreadsheet (found in the URL)
+        sheet: The name of the sheet
+        data: 2D array of rows to append. Each row is a list of cell values (string, number, boolean, or null).
+    
+    Returns:
+        Update result object
+    """
+    sheets_service = ctx.request_context.lifespan_context.sheets_service
+    
+    # Construct the range (just the sheet name for append)
+    range_name = sheet
+    
+    # Prepare the value range object
+    value_range_body = {
+        'values': data
+    }
+    
+    # Call the Sheets API to append values
+    result = sheets_service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=range_name,
+        valueInputOption='USER_ENTERED',
+        body=value_range_body
     ).execute()
     
     return result
@@ -593,7 +639,7 @@ def rename_sheet(spreadsheet: str,
 
 
 @mcp.tool()
-def get_multiple_sheet_data(queries: List[Dict[str, str]], 
+def get_multiple_sheet_data(queries: List[QueryDict], 
                             ctx: Context = None) -> List[Dict[str, Any]]:
     """
     Get data from multiple specific ranges in Google Spreadsheets.
@@ -907,7 +953,7 @@ def list_spreadsheets(ctx: Context = None) -> List[Dict[str, str]]:
 
 @mcp.tool()
 def share_spreadsheet(spreadsheet_id: str, 
-                      recipients: List[Dict[str, str]],
+                      recipients: List[RecipientDict],
                       send_notification: bool = True,
                       ctx: Context = None) -> Dict[str, List[Dict[str, Any]]]:
     """
