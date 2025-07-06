@@ -319,7 +319,7 @@ def update_cells(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
     range: Annotated[str, Field(description="Cell range in A1 notation (e.g., 'A1:C10')")],
-    data: Annotated[List[List[Union[str, int, float, bool, None]]], Field(description="2D array of values to update. Each row is a list of cell values (string, number, boolean, or null).")],
+    data: Annotated[SpreadsheetData, Field(description="2D array of values to update. Each row is a list of cell values (string, number, boolean, or null).")],
     ctx: Context = None
 ) -> Dict[str, Any]:
     """
@@ -359,7 +359,7 @@ def update_cells(
 def batch_update_cells(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
-    ranges: Annotated[Dict[str, List[List[Union[str, int, float, bool, None]]]], Field(description="Dictionary mapping range strings to 2D arrays of values. Example: {'A1:B2': [['John', 25], ['Jane', 30]]}")],
+    ranges: Annotated[BatchRanges, Field(description="Dictionary mapping range strings to 2D arrays of values. Example: {'A1:B2': [['John', 25], ['Jane', 30]]}")],
     ctx: Context = None
 ) -> Dict[str, Any]:
     """
@@ -404,7 +404,7 @@ def batch_update_cells(
 def add_rows(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
-    data: Annotated[List[List[Union[str, int, float, bool, None]]], Field(description="2D array of rows to append. Each row is a list of cell values (string, number, boolean, or null).")],
+    data: Annotated[SpreadsheetData, Field(description="2D array of rows to append. Each row is a list of cell values (string, number, boolean, or null).")],
     ctx: Context = None
 ) -> Dict[str, Any]:
     """
