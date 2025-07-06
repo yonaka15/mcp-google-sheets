@@ -7,17 +7,31 @@ A Model Context Protocol (MCP) server built with FastMCP for interacting with Go
 import base64
 import os
 from typing import List, Dict, Any, Optional, Union, Literal, Annotated
-from pydantic import Field
+from pydantic import BaseModel, Field
 import json
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 # Schema improvements: Add more specific type definitions
-# Clarify 2D array type definitions
+# Clarify 2D array type definitions  
 CellValue = Union[str, int, float, bool, None]
 QueryDict = Dict[str, str]  # Query dictionary containing spreadsheet_id, sheet, range
 RecipientDict = Dict[str, str]  # Recipient dictionary containing email_address, role
+
+# Define Pydantic BaseModel for 2D array with proper JSON schema generation
+class SpreadsheetData(BaseModel):
+    """A 2D array for spreadsheet data with proper JSON schema generation"""
+    rows: List[List[Union[str, int, float, bool, None]]] = Field(
+        description="2D array of values. Each row is a list of cell values (string, number, boolean, or null)."
+    )
+
+# Define Pydantic BaseModel for batch ranges
+class BatchRanges(BaseModel):
+    """Dictionary mapping range strings to 2D arrays of values"""
+    ranges: Dict[str, List[List[Union[str, int, float, bool, None]]]] = Field(
+        description="Dictionary mapping range strings to 2D arrays of values. Example: {'A1:B2': [['John', 25], ['Jane', 30]]}"
+    )
 
 # MCP imports
 from fastmcp import FastMCP, Context
@@ -317,7 +331,7 @@ def update_cells(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
     range: Annotated[str, Field(description="Cell range in A1 notation (e.g., 'A1:C10')")],
-    data: Annotated[List[List[Union[str, int, float, bool, None]]], Field(description="2D array of values to update. Each row is a list of cell values (string, number, boolean, or null).")],
+    data: SpreadsheetData,
     ctx: Context = None
 ) -> Dict[str, Any]:
     """
@@ -327,7 +341,7 @@ def update_cells(
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
         sheet: The name of the sheet
         range: Cell range in A1 notation (e.g., 'A1:C10')
-        data: 2D array of values to update. Each row is a list of cell values (string, number, boolean, or null).
+        data: SpreadsheetData object containing a 2D array of values to update.
     
     Returns:
         Result of the update operation
@@ -339,7 +353,7 @@ def update_cells(
     
     # Prepare the value range object
     value_range_body = {
-        'values': data
+        'values': data.rows
     }
     
     # Call the Sheets API to update values
@@ -357,7 +371,7 @@ def update_cells(
 def batch_update_cells(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
-    ranges: Annotated[Dict[str, List[List[Union[str, int, float, bool, None]]]], Field(description="Dictionary mapping range strings to 2D arrays of values. Example: {'A1:B2': [['John', 25], ['Jane', 30]]}")],
+    ranges: BatchRanges,
     ctx: Context = None
 ) -> Dict[str, Any]:
     """
@@ -366,9 +380,7 @@ def batch_update_cells(
     Args:
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
         sheet: The name of the sheet
-        ranges: Dictionary mapping range strings to 2D arrays of values.
-               Each value array contains rows of cell values (string, number, boolean, or null).
-               Example: {"A1:B2": [["John", 25], ["Jane", 30]], "D1:E2": [["Product", "Price"], ["Widget", 9.99]]}
+        ranges: BatchRanges object containing dictionary mapping range strings to 2D arrays of values.
     
     Returns:
         Result of the batch update operation
@@ -377,7 +389,7 @@ def batch_update_cells(
     
     # Prepare the batch update request
     data = []
-    for range_str, values in ranges.items():
+    for range_str, values in ranges.ranges.items():
         full_range = f"{sheet}!{range_str}"
         data.append({
             'range': full_range,
@@ -402,7 +414,7 @@ def batch_update_cells(
 def add_rows(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
-    data: Annotated[List[List[Union[str, int, float, bool, None]]], Field(description="2D array of rows to append. Each row is a list of cell values (string, number, boolean, or null).")],
+    data: SpreadsheetData,
     ctx: Context = None
 ) -> Dict[str, Any]:
     """
@@ -411,7 +423,7 @@ def add_rows(
     Args:
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
         sheet: The name of the sheet
-        data: 2D array of rows to append. Each row is a list of cell values (string, number, boolean, or null).
+        data: SpreadsheetData object containing a 2D array of rows to append.
     
     Returns:
         Update result object
@@ -423,7 +435,7 @@ def add_rows(
     
     # Prepare the value range object
     value_range_body = {
-        'values': data
+        'values': data.rows
     }
     
     # Call the Sheets API to append values
