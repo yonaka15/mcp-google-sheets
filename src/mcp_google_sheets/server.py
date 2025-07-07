@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 # Schema improvements: Add more specific type definitions
-# Clarify 2D array type definitions  
+# Clarify 2D array type definitions
 CellValue = Union[str, int, float, bool, None]
 QueryDict = Dict[str, str]  # Query dictionary containing spreadsheet_id, sheet, range
 RecipientDict = Dict[str, str]  # Recipient dictionary containing email_address, role
@@ -22,7 +22,7 @@ RecipientDict = Dict[str, str]  # Recipient dictionary containing email_address,
 # Define Pydantic BaseModel for 2D array with proper JSON schema generation
 class SpreadsheetData(BaseModel):
     """A JSON object that wraps a 2D array of spreadsheet data."""
-    rows: List[List[Union[str, int, float, bool, None]]] = Field(
+    rows: List[List[Union[str, int, float, bool, None]]]] = Field(
         description="A JSON object containing a 'rows' key, which holds a 2D array of values. Example: {\\"rows\\": [[\\"Cell A1\\", \\"Cell B1\\"], [\\"Cell A2\\", \\"Cell B2\\"]]}. Each cell can be a string, number, boolean, or null."
     )
 
@@ -201,35 +201,38 @@ mcp = FastMCP("Google Spreadsheet",
 def get_sheet_data(spreadsheet_id: str, 
                    sheet: str,
                    range: Optional[str] = None,
-                   ctx: Context = None) -> Dict[str, Any]:
+                   ctx: Context = None) -> List[List[CellValue]]:
     """
-    Get data from a specific sheet in a Google Spreadsheet.
+    Get cell values from a specific sheet in a Google Spreadsheet.
+    
+    This tool is optimized to return only the cell data as a 2D array (list of lists), 
+    which is efficient for AI models. It does not return metadata like formatting or cell properties.
     
     Args:
-        spreadsheet_id: The ID of the spreadsheet (found in the URL)
-        sheet: The name of the sheet
-        range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all data.
+        spreadsheet_id: The ID of the spreadsheet (found in the URL).
+        sheet: The name of the sheet.
+        range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all data from the sheet.
     
     Returns:
-        Grid data structure with full metadata from Google Sheets API
+        A 2D array (list of lists) containing the cell values.
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
-    # Construct the range - keep original API behavior
+    # Construct the range
     if range:
         full_range = f"{sheet}!{range}"
     else:
         full_range = sheet
     
-    # Use includeGridData to preserve empty cells and structure
-    result = sheets_service.spreadsheets().get(
+    # Use the more efficient `values().get()` to fetch only cell data
+    result = sheets_service.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
-        ranges=[full_range],
-        includeGridData=True
+        range=full_range
     ).execute()
     
-    # Return the grid data as-is, preserving all Google's metadata
-    return result
+    # Extract just the values, which is a 2D array
+    values = result.get('values', [])
+    return values
 
 
 @mcp.tool
