@@ -22,15 +22,15 @@ RecipientDict = Dict[str, str]  # Recipient dictionary containing email_address,
 # Define Pydantic BaseModel for 2D array with proper JSON schema generation
 class SpreadsheetData(BaseModel):
     """A JSON object that wraps a 2D array of spreadsheet data."""
-    rows: List[List[Union[str, int, float, bool, None]]]] = Field(
-        description="A JSON object containing a 'rows' key, which holds a 2D array of values. Example: {\\"rows\\": [[\\"Cell A1\\", \\"Cell B1\\"], [\\"Cell A2\\", \\"Cell B2\\"]]}. Each cell can be a string, number, boolean, or null."
+    rows: List[List[Union[str, int, float, bool, None]]] = Field(
+        description='A JSON object containing a "rows" key, which holds a 2D array of values. Example: {\"rows": [["Cell A1", "Cell B1\"], ["Cell A2", \"Cell B2\"]]}. Each cell can be a string, number, boolean, or null.'
     )
 
 # Define Pydantic BaseModel for batch ranges
 class BatchRanges(BaseModel):
     """A JSON object for batch updating multiple ranges with their corresponding data."""
     ranges: Dict[str, List[List[Union[str, int, float, bool, None]]]] = Field(
-        description="A JSON object containing a 'ranges' key, which maps range strings to a 2D array of values. Example: {\\"ranges\\": {\\"A1:B2\\": [[\\"John\\", 25], [\\"Jane\\", 30]]}}"
+        description='A JSON object containing a "ranges" key, which maps range strings to a 2D array of values. Example: {\"ranges": {\"A1:B2\\": [[\"John", 25], [\"Jane\\", 30]]}}'
     )
 
 # MCP imports
