@@ -201,38 +201,44 @@ mcp = FastMCP("Google Spreadsheet",
 def get_sheet_data(spreadsheet_id: str, 
                    sheet: str,
                    range: Optional[str] = None,
-                   ctx: Context = None) -> List[List[CellValue]]:
+                   include_grid_data: bool = False,
+                   ctx: Context = None) -> Union[List[List[CellValue]], Dict[str, Any]]:
     """
-    Get cell values from a specific sheet in a Google Spreadsheet.
+    Get data from a specific sheet. By default, returns a 2D array of cell values.
     
-    This tool is optimized to return only the cell data as a 2D array (list of lists), 
-    which is efficient for AI models. It does not return metadata like formatting or cell properties.
+    This tool is optimized for efficiency. For detailed metadata, set `include_grid_data` to True.
     
     Args:
         spreadsheet_id: The ID of the spreadsheet (found in the URL).
         sheet: The name of the sheet.
-        range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all data from the sheet.
+        range: Optional cell range in A1 notation (e.g., 'A1:C10'). Gets all data if not provided.
+        include_grid_data: If True, returns the full grid data object from Google API, including
+                           formatting and other metadata. Defaults to False.
     
     Returns:
-        A 2D array (list of lists) containing the cell values.
+        - If `include_grid_data` is False (default): A 2D array (list of lists) of cell values.
+        - If `include_grid_data` is True: A dictionary with the full grid data from the API.
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
     # Construct the range
-    if range:
-        full_range = f"{sheet}!{range}"
+    full_range = f"{sheet}!{range}" if range else sheet
+    
+    if include_grid_data:
+        # Fetch full grid data, including formatting and metadata
+        result = sheets_service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            ranges=[full_range],
+            includeGridData=True
+        ).execute()
+        return result
     else:
-        full_range = sheet
-    
-    # Use the more efficient `values().get()` to fetch only cell data
-    result = sheets_service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=full_range
-    ).execute()
-    
-    # Extract just the values, which is a 2D array
-    values = result.get('values', [])
-    return values
+        # Fetch only cell values for efficiency
+        result = sheets_service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=full_range
+        ).execute()
+        return result.get('values', [])
 
 
 @mcp.tool
