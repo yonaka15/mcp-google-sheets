@@ -21,16 +21,16 @@ RecipientDict = Dict[str, str]  # Recipient dictionary containing email_address,
 
 # Define Pydantic BaseModel for 2D array with proper JSON schema generation
 class SpreadsheetData(BaseModel):
-    """A 2D array for spreadsheet data with proper JSON schema generation"""
+    """A JSON object that wraps a 2D array of spreadsheet data."""
     rows: List[List[Union[str, int, float, bool, None]]] = Field(
-        description="2D array of values. Each row is a list of cell values (string, number, boolean, or null)."
+        description="A JSON object containing a 'rows' key, which holds a 2D array of values. Example: {\\"rows\\": [[\\"Cell A1\\", \\"Cell B1\\"], [\\"Cell A2\\", \\"Cell B2\\"]]}. Each cell can be a string, number, boolean, or null."
     )
 
 # Define Pydantic BaseModel for batch ranges
 class BatchRanges(BaseModel):
-    """Dictionary mapping range strings to 2D arrays of values"""
+    """A JSON object for batch updating multiple ranges with their corresponding data."""
     ranges: Dict[str, List[List[Union[str, int, float, bool, None]]]] = Field(
-        description="Dictionary mapping range strings to 2D arrays of values. Example: {'A1:B2': [['John', 25], ['Jane', 30]]}"
+        description="A JSON object containing a 'ranges' key, which maps range strings to a 2D array of values. Example: {\\"ranges\\": {\\"A1:B2\\": [[\\"John\\", 25], [\\"Jane\\", 30]]}}"
     )
 
 # MCP imports
@@ -341,7 +341,7 @@ def update_cells(
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
         sheet: The name of the sheet
         range: Cell range in A1 notation (e.g., 'A1:C10')
-        data: SpreadsheetData object containing a 2D array of values to update.
+        data: SpreadsheetData object. Expects a JSON like: {"rows": [["val1", "val2"]]}
     
     Returns:
         Result of the update operation
@@ -380,7 +380,7 @@ def batch_update_cells(
     Args:
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
         sheet: The name of the sheet
-        ranges: BatchRanges object containing dictionary mapping range strings to 2D arrays of values.
+        ranges: BatchRanges object. Expects a JSON like: {"ranges": {"A1:B2": [["val1"]]}}
     
     Returns:
         Result of the batch update operation
@@ -423,7 +423,7 @@ def add_rows(
     Args:
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
         sheet: The name of the sheet
-        data: SpreadsheetData object containing a 2D array of rows to append.
+        data: SpreadsheetData object. Expects a JSON like: {"rows": [["val1", "val2"]]}
     
     Returns:
         Update result object
