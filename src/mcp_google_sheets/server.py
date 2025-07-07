@@ -202,7 +202,7 @@ def get_sheet_data(spreadsheet_id: str,
                    sheet: str,
                    range: Optional[str] = None,
                    include_grid_data: bool = False,
-                   ctx: Context = None) -> Union[List[List[CellValue]], Dict[str, Any]]:
+                   ctx: Context = None) -> Dict[str, Any]:
     """
     Get data from a specific sheet. By default, returns a 2D array of cell values.
     
@@ -216,8 +216,7 @@ def get_sheet_data(spreadsheet_id: str,
                            formatting and other metadata. Defaults to False.
     
     Returns:
-        - If `include_grid_data` is False (default): A 2D array (list of lists) of cell values.
-        - If `include_grid_data` is True: A dictionary with the full grid data from the API.
+        A dictionary containing the fetched data, keyed by either 'values' or 'grid_data'.
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
@@ -231,14 +230,14 @@ def get_sheet_data(spreadsheet_id: str,
             ranges=[full_range],
             includeGridData=True
         ).execute()
-        return result
+        return {"grid_data": result}
     else:
         # Fetch only cell values for efficiency
         result = sheets_service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
             range=full_range
         ).execute()
-        return result.get('values', [])
+        return {"values": result.get('values', [])}
 
 
 @mcp.tool
@@ -304,7 +303,7 @@ def get_sheet_formulas(
     sheet: Annotated[str, Field(description="The name of the sheet")],
     range: Annotated[Optional[str], Field(description="Optional cell range in A1 notation")] = None,
     ctx: Context = None
-) -> List[List[str]]:
+) -> Dict[str, List[List[str]]]:
     """
     Get formulas from a specific sheet in a Google Spreadsheet.
     
@@ -314,7 +313,7 @@ def get_sheet_formulas(
         range: Optional cell range in A1 notation (e.g., 'A1:C10'). If not provided, gets all formulas from the sheet.
     
     Returns:
-        A 2D array of the sheet formulas where each cell contains the formula as a string.
+        A dictionary containing a 2D array of the sheet formulas. e.g. {"formulas": [["=A1+B1"]]}
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
@@ -333,7 +332,7 @@ def get_sheet_formulas(
     
     # Get the formulas from the response
     formulas = result.get('values', [])
-    return formulas
+    return {"formulas": formulas}
 
 @mcp.tool
 def update_cells(
@@ -517,7 +516,7 @@ def add_columns(spreadsheet_id: str,
 
 
 @mcp.tool
-def list_sheets(spreadsheet_id: str, ctx: Context = None) -> List[str]:
+def list_sheets(spreadsheet_id: str, ctx: Context = None) -> Dict[str, List[str]]:
     """
     List all sheets in a Google Spreadsheet.
     
@@ -525,7 +524,7 @@ def list_sheets(spreadsheet_id: str, ctx: Context = None) -> List[str]:
         spreadsheet_id: The ID of the spreadsheet (found in the URL)
     
     Returns:
-        List of sheet names
+        A dictionary containing a list of sheet names. e.g. {"sheets": ["Sheet1", "Sheet2"]}
     """
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     
@@ -535,7 +534,7 @@ def list_sheets(spreadsheet_id: str, ctx: Context = None) -> List[str]:
     # Extract sheet names
     sheet_names = [sheet['properties']['title'] for sheet in spreadsheet['sheets']]
     
-    return sheet_names
+    return {"sheets": sheet_names}
 
 
 @mcp.tool
@@ -950,13 +949,13 @@ def create_sheet(spreadsheet_id: str,
 
 
 @mcp.tool
-def list_spreadsheets(ctx: Context = None) -> List[Dict[str, str]]:
+def list_spreadsheets(ctx: Context = None) -> Dict[str, List[Dict[str, str]]]:
     """
     List all spreadsheets in the configured Google Drive folder.
     If no folder is configured, lists spreadsheets from 'My Drive'.
     
     Returns:
-        List of spreadsheets with their ID and title
+        A dictionary containing a list of spreadsheets with their ID and title.
     """
     drive_service = ctx.request_context.lifespan_context.drive_service
     folder_id = ctx.request_context.lifespan_context.folder_id
@@ -980,7 +979,7 @@ def list_spreadsheets(ctx: Context = None) -> List[Dict[str, str]]:
     
     spreadsheets = results.get('files', [])
     
-    return [{'id': sheet['id'], 'title': sheet['name']} for sheet in spreadsheets]
+    return {"spreadsheets": [{'id': sheet['id'], 'title': sheet['name']} for sheet in spreadsheets]}
 
 
 @mcp.tool
