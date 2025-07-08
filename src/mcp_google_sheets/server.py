@@ -5,18 +5,69 @@ A Model Context Protocol (MCP) server built with FastMCP for interacting with Go
 """
 
 import base64
-import os
-from typing import List, Dict, Any, Optional, Union, Literal, Annotated
-from pydantic import BaseModel, Field
 import json
-from dataclasses import dataclass
+import os
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional, Union, Literal, Annotated
+
+from pydantic import BaseModel, Field
 
 # MCP imports
 from fastmcp import FastMCP, Context
 # Internal imports for custom behavior override
-from fastmcp.tools.tool import FunctionTool, ToolResult, _convert_to_content, _is_pydantic_model, _is_model_instance
+from fastmcp.tools.tool import FunctionTool, ToolResult
+
+# Google API imports
+from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+import google.auth
+
+# --- Compatibility Layer for Removed fastMCP Internal Functions ---
+
+def _convert_to_content(result: Any) -> List[Any]:
+    """
+    Convert result to content blocks (replacement for removed fastMCP function).
+    Simplified implementation for basic text content.
+    """
+    from mcp.types import TextContent
+    
+    if result is None:
+        return [TextContent(type="text", text="null")]
+    elif isinstance(result, str):
+        return [TextContent(type="text", text=result)]
+    elif isinstance(result, (int, float, bool)):
+        return [TextContent(type="text", text=str(result))]
+    elif isinstance(result, dict):
+        return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False))]
+    elif isinstance(result, list):
+        return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False))]
+    else:
+        return [TextContent(type="text", text=str(result))]
+
+def _is_pydantic_model(obj: Any) -> bool:
+    """
+    Check if object is a Pydantic model type (replacement for removed fastMCP function).
+    """
+    try:
+        from pydantic import BaseModel
+        return isinstance(obj, type) and issubclass(obj, BaseModel)
+    except (ImportError, TypeError):
+        return False
+
+def _is_model_instance(obj: Any) -> bool:
+    """
+    Check if object is a Pydantic model instance (replacement for removed fastMCP function).
+    """
+    try:
+        from pydantic import BaseModel
+        return isinstance(obj, BaseModel)
+    except ImportError:
+        return False
 
 
 # --- Custom MCP Implementation to Control Response Behavior ---
@@ -24,31 +75,45 @@ from fastmcp.tools.tool import FunctionTool, ToolResult, _convert_to_content, _i
 class CustomFunctionTool(FunctionTool):
     """
     A custom FunctionTool that overrides the run method to control response generation.
+    This implementation fixes the duplicate response issue by controlling when to generate
+    raw text content vs structured JSON content.
     """
     async def run(self, arguments: Dict[str, Any]) -> ToolResult:
-        # Check for our custom control argument
-        raw_content_only = arguments.pop("raw_content", False)
+        # Check for our custom control argument (excluded from schema)
+        raw_content_requested = arguments.pop("raw_content", False)
 
-        # Execute the actual tool function
-        result = await self._execute(arguments)
+        try:
+            # Execute the actual tool function
+            result = await self._execute(arguments)
+        except Exception as e:
+            # Handle execution errors gracefully
+            error_content = _convert_to_content(f"Tool execution failed: {str(e)}")
+            return ToolResult(
+                content=error_content,
+                structured_content=None,
+            )
         
-        # Determine how to handle the result based on its type and our flag
+        # Determine content generation strategy
         is_model = _is_model_instance(result)
-        is_pydantic = _is_pydantic_model(self.returns)
+        is_pydantic = _is_pydantic_model(self.returns) if hasattr(self, 'returns') else False
         
         structured_content = None
         unstructured_result = None
 
         # Always generate structured content unless the return type is None
-        if self.returns is not type(None):
-            if is_model or is_pydantic:
+        if not (hasattr(self, 'returns') and self.returns is type(None)):
+            if is_model:
+                # Pydantic model instance - use as-is
+                structured_content = result
+            elif is_pydantic:
+                # Return type is Pydantic model but result isn't - wrap it
                 structured_content = result
             else:
-                # Wrap non-model results in a standard JSON structure
-                structured_content = {"result": result}
+                # Regular Python types - wrap in standard structure for consistency
+                structured_content = result if isinstance(result, dict) else {"result": result}
 
-        # Generate raw text content ONLY if raw_content_only is true
-        if raw_content_only:
+        # Generate raw text content ONLY if explicitly requested
+        if raw_content_requested:
             unstructured_result = _convert_to_content(result)
 
         return ToolResult(
@@ -59,22 +124,39 @@ class CustomFunctionTool(FunctionTool):
 class CustomMCP(FastMCP):
     """
     A custom FastMCP server that uses our CustomFunctionTool for all registered tools.
+    This ensures consistent response behavior across all tools in the server.
     """
     def tool(self, *args, **kwargs):
+        """Override the tool decorator to use our CustomFunctionTool."""
         decorator = super().tool(*args, **kwargs)
         def wrapper(func):
-            tool_instance = decorator(func) # This creates the FunctionTool instance
-            # Replace the standard tool with our custom one
-            custom_tool = CustomFunctionTool(
-                name=tool_instance.name,
-                description=tool_instance.description,
-                fn=tool_instance.fn,
-                returns=tool_instance.returns,
-                parameters=tool_instance.parameters,
-                # Forward other potential attributes if necessary
-            )
-            # Register the custom tool instead of the original
-            self.tools[custom_tool.name] = custom_tool
+            # Let FastMCP create the standard tool first
+            tool_instance = decorator(func)
+            
+            try:
+                # Create our custom tool with the same properties
+                custom_tool = CustomFunctionTool(
+                    name=tool_instance.name,
+                    description=tool_instance.description,
+                    fn=tool_instance.fn,
+                    returns=getattr(tool_instance, 'returns', None),
+                    parameters=getattr(tool_instance, 'parameters', None),
+                )
+                
+                # Copy any additional attributes that might exist
+                for attr in ['tags', 'enabled', 'annotations']:
+                    if hasattr(tool_instance, attr):
+                        setattr(custom_tool, attr, getattr(tool_instance, attr))
+                
+                # Register the custom tool instead of the original
+                self.tools[custom_tool.name] = custom_tool
+                
+            except Exception as e:
+                # Fallback to original tool if custom creation fails
+                print(f"Warning: Could not create CustomFunctionTool for {func.__name__}: {e}")
+                # The original tool is already registered by the parent decorator
+                pass
+            
             return func # Return the original function, as is standard
         return wrapper
 
