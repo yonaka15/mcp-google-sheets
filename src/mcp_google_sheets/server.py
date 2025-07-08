@@ -167,15 +167,6 @@ CellValue = Union[str, int, float, bool, None]
 QueryDict = Dict[str, str]
 RecipientDict = Dict[str, str]
 
-class SpreadsheetData(BaseModel):
-    rows: List[List[CellValue]] = Field(
-        description='A JSON object containing a "rows" key, which holds a 2D array of values. Example: {"rows": [["Cell A1", "Cell B1"], ["Cell A2", "Cell B2"]]}. Each cell can be a string, number, boolean, or null.'
-    )
-
-class BatchRanges(BaseModel):
-    ranges: Dict[str, List[List[CellValue]]] = Field(
-        description='A JSON object containing a "ranges" key, which maps range strings to a 2D array of values. Example: {"ranges": {"A1:B2": [["John", 25], ["Jane", 30]]}}'
-    )
 
 
 # --- Authentication and Lifespan Management ---
@@ -327,14 +318,14 @@ def update_cells(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
     range: Annotated[str, Field(description="Cell range in A1 notation (e.g., 'A1:C10')")],
-    data: SpreadsheetData,
+    data: Annotated[Dict[str, List[List[CellValue]]], Field(description='A JSON object containing a "rows" key, which holds a 2D array of values. Example: {"rows": [["Cell A1", "Cell B1"], ["Cell A2", "Cell B2"]]}. Each cell can be a string, number, boolean, or null.')],
     raw_content: Optional[bool] = Field(False, description="Internal use.", exclude=True),
     ctx: Context = None
 ) -> Dict[str, Any]:
     """Update cells in a Google Spreadsheet."""
     sheets_service = ctx.request_context.lifespan_context.sheets_service
     full_range = f"{sheet}!{range}"
-    value_range_body = {'values': data.rows}
+    value_range_body = {'values': data['rows']}
     result = sheets_service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=full_range, valueInputOption='USER_ENTERED', body=value_range_body).execute()
     return result
 
@@ -342,13 +333,13 @@ def update_cells(
 def batch_update_cells(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
-    ranges: BatchRanges,
+    ranges: Annotated[Dict[str, Dict[str, List[List[CellValue]]]], Field(description='A JSON object containing a "ranges" key, which maps range strings to a 2D array of values. Example: {"ranges": {"A1:B2": [["John", 25], ["Jane", 30]]}}')],
     raw_content: Optional[bool] = Field(False, description="Internal use.", exclude=True),
     ctx: Context = None
 ) -> Dict[str, Any]:
     """Batch update multiple ranges in a Google Spreadsheet."""
     sheets_service = ctx.request_context.lifespan_context.sheets_service
-    data = [{'range': f"{sheet}!{range_str}", 'values': values} for range_str, values in ranges.ranges.items()]
+    data = [{'range': f"{sheet}!{range_str}", 'values': values} for range_str, values in ranges['ranges'].items()]
     batch_body = {'valueInputOption': 'USER_ENTERED', 'data': data}
     result = sheets_service.spreadsheets().values().batchUpdate(spreadsheetId=spreadsheet_id, body=batch_body).execute()
     return result
@@ -357,13 +348,13 @@ def batch_update_cells(
 def add_rows(
     spreadsheet_id: Annotated[str, Field(description="The ID of the spreadsheet (found in the URL)")],
     sheet: Annotated[str, Field(description="The name of the sheet")],
-    data: SpreadsheetData,
+    data: Annotated[Dict[str, List[List[CellValue]]], Field(description='A JSON object containing a "rows" key, which holds a 2D array of values. Example: {"rows": [["Cell A1", "Cell B1"], ["Cell A2", "Cell B2"]]}. Each cell can be a string, number, boolean, or null.')],
     raw_content: Optional[bool] = Field(False, description="Internal use.", exclude=True),
     ctx: Context = None
 ) -> Dict[str, Any]:
     """Append rows to the end of a sheet (after the last row with data)."""
     sheets_service = ctx.request_context.lifespan_context.sheets_service
-    value_range_body = {'values': data.rows}
+    value_range_body = {'values': data['rows']}
     result = sheets_service.spreadsheets().values().append(spreadsheetId=spreadsheet_id, range=sheet, valueInputOption='USER_ENTERED', body=value_range_body).execute()
     return result
 

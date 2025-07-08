@@ -521,7 +521,7 @@ wheels = [
 
 [[package]]
 name = "mcp-google-sheets"
-version = "0.0.0.post25.dev0+a7e7405"
+version = "0.0.0.post32.dev0+577f00b"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
